@@ -96,7 +96,6 @@ def value_iteration(env, gamma, max_iterations, logger):
     """
     NUM_STATES = env.observation_space.n
     NUM_ACTIONS = env.action_space.n
-    TRANSITION_MODEL = env.trans_model
 
     v = [0] * NUM_STATES
     pi = [0] * NUM_STATES
@@ -112,25 +111,24 @@ def value_iteration(env, gamma, max_iterations, logger):
         max_gap = 0
 
         for state in range(NUM_STATES):
+            q_values = []
             for action in range(NUM_ACTIONS):
-                t = env.trans_model[state][action]
-                for next_prob, next_state, next_reward, done in t:
-                    next_state_value = next_prob * (next_reward + gamma * v[next_state] * (1 - done))
-                    if next_state_value > cur_v[state]:
-                        cur_v[state] = next_state_value
-                        cur_pi[state] = action
-                max_gap = max(max_gap, abs(cur_v[state] - v[state]))
-                # t =  (p, s_, r, terminal)
+                next_state_value = 0
+                for next_prob, next_state, next_reward, done in env.trans_model[state][action]:
+                    next_state_value += next_prob * (next_reward + gamma * v[next_state] * (1 - done))
+                q_values.append(next_state_value)
+            cur_v[state] = max(q_values)
+            cur_pi[state] = np.argmax(q_values)
+            max_gap = max(max_gap, abs(cur_v[state] - v[state]))
+
         v = cur_v
         pi = cur_pi
 
-        # Early Stop Strategy
-        if  max_gap < 1e-5:
+        if max_gap < 1e-5:
             print("Early Stopping! Stop after {} iterations".format(iteration))
             break
 
-        # Log current value and policy
-        logger.log(iteration + 1, v, pi) 
+        logger.log(iteration + 1, v, pi)
     ###############################################################################
     return pi
 
@@ -171,10 +169,9 @@ def policy_iteration(env, gamma, max_iterations, logger):
     """
     NUM_STATES = env.observation_space.n
     NUM_ACTIONS = env.action_space.n
-    TRANSITION_MODEL = env.trans_model
     
     v = [0.0] * NUM_STATES
-    pi = [random.randint(0, NUM_ACTIONS-1)] * NUM_STATES
+    pi = [random.randint(0, NUM_ACTIONS-1) for _ in range(NUM_STATES)]
 
     # To judge if policy has converged (50 continuous same policy means convergency)
     max_policy_count = 50
@@ -185,56 +182,34 @@ def policy_iteration(env, gamma, max_iterations, logger):
     ### Please finish the code below ##############################################
     ###############################################################################
     for iteration in range(max_iterations):
-        cur_pi = pi.copy()
-        print("{}-th Policy Evaluation Start".format(iteration))
-
-        ### Policy  Evaluation ###
-        for inner_iter in range(max_iterations):
+        # Policy Evaluation
+        for _ in range(max_iterations):
             max_gap = 0
             cur_v = [0.0] * NUM_STATES
-            
             for state in range(NUM_STATES):
                 action = pi[state]
-                t = env.trans_model[state][action]
-
-                for next_prob, next_state, next_reward, done in t:
+                for next_prob, next_state, next_reward, done in env.trans_model[state][action]:
                     cur_v[state] += next_prob * (next_reward + gamma * v[next_state] * (1 - done))
                 max_gap = max(max_gap, abs(cur_v[state] - v[state]))
-
-            if max_gap < 1e-2:
-                print("{}-th Policy Evaluation get converged at {}-th iteration".format(iteration, inner_iter + 1))
+            v = cur_v
+            if max_gap < 1e-4:
                 break
-        v = cur_v
-        print("{}-th Policy Evaluation End".format(iteration))
 
-        ### Policy Improvement ###
-        # Calculate Q(s, a), followed by a argmax Q(s,a)
-        print()
+        # Policy Improvement
+        cur_pi = pi.copy()
         for state in range(NUM_STATES):
-            optimal_q_s_a = 0
-
+            q_values = []
             for action in range(NUM_ACTIONS):
-                cur_q_s_a = 0
-                t = env.trans_model[state][action]
-                for next_prob, next_state, next_reward, done in t:
-                    cur_q_s_a += next_prob * (next_reward + gamma * v[next_state] * (1 - done))
-
-                if cur_q_s_a > optimal_q_s_a:
-                    optimal_q_s_a = cur_q_s_a
-                    cur_pi[state] = action
-        
-        # Early Stop Strategy
+                q = 0
+                for next_prob, next_state, next_reward, done in env.trans_model[state][action]:
+                    q += next_prob * (next_reward + gamma * v[next_state] * (1 - done))
+                q_values.append(q)
+            cur_pi[state] = int(np.argmax(q_values))
+        logger.log(iteration + 1, v, cur_pi)
         if cur_pi == pi:
-            cur_policy_count += 1
-            if cur_policy_count == max_policy_count:
-                print("Policy Improvement has get converged!")
-                break
-        else:
-           cur_policy_count = 0
-
+            print(f"Policy converged at iteration {iteration+1}")
+            break
         pi = cur_pi
-        # Log current value and policy
-        logger.log(iteration + 1, v, pi) 
     ###############################################################################
     return pi
 
