@@ -108,6 +108,7 @@ def value_iteration(env, gamma, max_iterations, logger):
     for iteration in range(max_iterations):
         cur_v = v.copy()
         cur_pi = pi.copy()
+
         max_gap = 0
 
         for state in range(NUM_STATES):
@@ -124,7 +125,7 @@ def value_iteration(env, gamma, max_iterations, logger):
         v = cur_v
         pi = cur_pi
 
-        if max_gap < 1e-5:
+        if max_gap < 1e-3:
             print("Early Stopping! Stop after {} iterations".format(iteration))
             break
 
@@ -254,9 +255,6 @@ def on_policy_mc_control(env, gamma, max_iterations, logger):
     #########################
     # Adjust superparameters as you see fit
     #
-    # To judge if policy has converged (30 continuous same policy means convergency)
-    max_policy_count = 30
-    cur_policy_count = 0
     # parameter for the epsilon-greedy method to trade off exploration and exploitation
     eps = 0.3
     final_eps = 0.999 # epsilon range from 0.5 -> 0.999
@@ -299,7 +297,6 @@ def on_policy_mc_control(env, gamma, max_iterations, logger):
 
         # Calculate Return Back to Head
         G = 0
-        Return = {}
 
         # Iterate through the episode in reverse
         for i in reversed(range(len(states))):
@@ -312,31 +309,18 @@ def on_policy_mc_control(env, gamma, max_iterations, logger):
 
                 # strict incremental method
                 n_s_a[states[i]][actions[i]] += 1
-                # cur_alpha = 1/n_s_a[states[i]][actions[i]] (if we follow the strict incremental updating method)
-
+  
                 # alpah method
                 cur_alpha = linear_decay(alpha, final_alpha, iteration, max_iterations)
                 q_s_a[states[i]][actions[i]] += cur_alpha * (G - q_s_a[states[i]][actions[i]])
 
         # Update the policy
         for s in range(NUM_STATES):
-            if n_s_a[s].sum() > 0:  # Ensure the state has been visited
-                if len(np.where(q_s_a[s]) == max(q_s_a[s])) == 1:
-                    pi[s] = np.argmax(q_s_a[s])  # Set policy to the best action
-                else:
-                    max_action = (np.where(q_s_a[s]) == max(q_s_a[s]))
-                    pi[s] = np.random.randint(0, len(max_action))
-                v[s] = np.max(q_s_a[s])
-        
-        # Early Stop Strategy
-        if cur_pi == pi:
-            cur_policy_count += 1
-            if cur_policy_count == max_policy_count:
-                print("Policy Improvement has get converged!")
-                break
-        else:
-           cur_policy_count = 0
-           cur_pi = pi.copy()
+            if n_s_a[s].sum() == 0:
+                continue  # skip unvisited states
+            best_actions = np.flatnonzero(q_s_a[s] == np.max(q_s_a[s]))
+            pi[s] = np.random.choice(best_actions)
+            v[s] = np.max(q_s_a[s])
 
         # Log current value and policy
         logger.log(iteration + 1, v, pi) 
@@ -383,9 +367,6 @@ def sarsa(env, gamma, max_iterations, logger):
     #########################
     # Adjust superparameters as you see fit
     #
-    # To judge if policy has converged (30 continuous same policy means convergency)
-    max_policy_count = 30
-    cur_policy_count = 0
     # parameter for the epsilon-greedy method to trade off exploration and exploitation
     eps = 0.3
     final_eps = 0.999 # epsilon range from 0.3 -> 0.999
@@ -419,30 +400,19 @@ def sarsa(env, gamma, max_iterations, logger):
 
             # td target
             cur_alpha = linear_decay(alpha, final_alpha, iteration, max_iterations)
-            q_s_a[state][action] += alpha * td_error
+            q_s_a[state][action] += cur_alpha * td_error
 
             state = next_state
             action = next_action
 
         for s in range(NUM_STATES):
-            if len(np.where(q_s_a[s]) == max(q_s_a[s])) == 1:
-                pi[s] = np.argmax(q_s_a[s])  # Set policy to the best action
-            else:
-                max_action = (np.where(q_s_a[s]) == max(q_s_a[s]))
-                pi[s] = np.random.randint(0, len(max_action))
+            if np.sum(q_s_a[s]) == 0:
+                continue  # skip unvisited states
+            best_actions = np.flatnonzero(q_s_a[s] == np.max(q_s_a[s]))
+            pi[s] = np.random.choice(best_actions)
             v[s] = np.max(q_s_a[s])
 
         logger.log(iteration + 1, v, pi) 
-
-        # Early Stop Strategy
-        if cur_pi == pi:
-            cur_policy_count += 1
-            if cur_policy_count == max_policy_count:
-                print("Policy Improvement has get converged!")
-                break
-        else:
-           cur_policy_count = 0
-           cur_pi = pi.copy()
 
     ###############################################################################
     return pi
@@ -479,7 +449,6 @@ def q_learning(env, gamma, max_iterations, logger):
     
     v = [0] * NUM_STATES
     pi = [0] * NUM_STATES
-    cur_pi = [0] * NUM_STATES
     q_s_a = np.zeros((NUM_STATES, NUM_ACTIONS))
     # Visualize the initial value and policy
     logger.log(0, v, pi)
@@ -487,9 +456,6 @@ def q_learning(env, gamma, max_iterations, logger):
     #########################
     # Adjust superparameters as you see fit
     #
-    # To judge if policy has converged (30 continuous same policy means convergency)
-    max_policy_count = 30
-    cur_policy_count = 0
     # parameter for the epsilon-greedy method to trade off exploration and exploitation
     eps = 0.3
     final_eps = 0.999 # epsilon range from 0.3 -> 0.999
@@ -516,7 +482,7 @@ def q_learning(env, gamma, max_iterations, logger):
             next_state, reward, done, info = env.step(action)
 
             # td error
-            td_error = reward + gamma * max(q_s_a[next_state]) - q_s_a[state][action]
+            td_error = reward + gamma * np.max(q_s_a[next_state]) - q_s_a[state][action]
 
             cur_alpha = linear_decay(alpha, final_alpha, iteration, max_iterations)
             q_s_a[state][action] += cur_alpha * td_error
@@ -524,24 +490,14 @@ def q_learning(env, gamma, max_iterations, logger):
             state = next_state
 
         for s in range(NUM_STATES):
-            if len(np.where(q_s_a[s]) == max(q_s_a[s])) == 1:
-                pi[s] = np.argmax(q_s_a[s])  # Set policy to the best action
-            else:
-                max_action = (np.where(q_s_a[s]) == max(q_s_a[s]))
-                pi[s] = np.random.randint(0, len(max_action))
-            v[s] = np.max(q_s_a[s])  # Set policy to the best action
+            if np.sum(q_s_a[s]) == 0:
+                continue  # skip unvisited states
+            best_actions = np.flatnonzero(q_s_a[s] == np.max(q_s_a[s]))
+            pi[s] = np.random.choice(best_actions)
+            v[s] = np.max(q_s_a[s])
 
         logger.log(iteration + 1, v, pi) 
 
-        # Early Stop Strategy
-        if cur_pi == pi:
-            cur_policy_count += 1
-            if cur_policy_count == max_policy_count:
-                print("Policy Improvement has get converged!")
-                break
-        else:
-           cur_policy_count = 0
-           cur_pi = pi.copy()
     ###############################################################################
     return pi
 
@@ -577,7 +533,6 @@ def double_q_learning(env, gamma, max_iterations, logger):
     
     v = [0] * NUM_STATES
     pi = [0] * NUM_STATES
-    cur_pi = [0] * NUM_STATES
     q1_s_a = np.zeros((NUM_STATES, NUM_ACTIONS))
     q2_s_a = np.zeros((NUM_STATES, NUM_ACTIONS))
     # Visualize the initial value and policy
@@ -586,9 +541,6 @@ def double_q_learning(env, gamma, max_iterations, logger):
     #########################
     # Adjust superparameters as you see fit
     #
-    # To judge if policy has converged (30 continuous same policy means convergency)
-    max_policy_count = 30
-    cur_policy_count = 0
     # parameter for the epsilon-greedy method to trade off exploration and exploitation
     eps = 0.3
     final_eps = 0.999 # epsilon range from 0.3 -> 0.999
@@ -627,25 +579,13 @@ def double_q_learning(env, gamma, max_iterations, logger):
         q_s_a = q1_s_a + q2_s_a
         
         for s in range(NUM_STATES):
-            if len(np.where(q_s_a[s]) == max(q_s_a[s])) == 1:
-                pi[s] = np.argmax(q_s_a[s])  # Set policy to the best action
-            else:
-                max_action = (np.where(q_s_a[s]) == max(q_s_a[s]))
-                pi[s] = np.random.randint(0, len(max_action))
-                print("HERERERER")
-            v[s] = np.max(q_s_a[s])  # Set policy to the best action
+            if np.sum(q_s_a[s]) == 0:
+                continue  # skip unvisited states
+            best_actions = np.flatnonzero(q_s_a[s] == np.max(q_s_a[s]))
+            pi[s] = np.random.choice(best_actions)
+            v[s] = np.max(q_s_a[s])
 
         logger.log(iteration + 1, v, pi) 
-
-        # Early Stop Strategy
-        if cur_pi == pi:
-            cur_policy_count += 1
-            if cur_policy_count == max_policy_count:
-                print("Policy Improvement has get converged!")
-                break
-        else:
-           cur_policy_count = 0
-           cur_pi = pi.copy()
     ###############################################################################
     return pi
 

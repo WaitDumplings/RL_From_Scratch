@@ -485,7 +485,7 @@ class App(tk.Frame):
     
     def draw_agent(self, r, c):
         if self.agent_icon is None:
-            self.agent_icon = tk.PhotoImage(file=os.path.join(os.path.dirname(os.path.realpath(__file__)), "ucr.png"))
+            self.agent_icon = tk.PhotoImage(file=os.path.join(os.path.dirname(os.path.realpath(__file__)), "agent.png"))
             sx = int(self.agent_icon.width()/(self.cell_size*0.8))
             sy = int(self.agent_icon.height()/(self.cell_size*0.8))
             self.agent_icon = self.agent_icon.subsample(sx, sy)
